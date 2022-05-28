@@ -14,7 +14,7 @@ for file in os.listdir():
 	if os.path.isfile(file):	
 		files.append(file)
 
-prompt = input(f'Queued following files for decryption: {files}, proceed?')
+prompt = input(f'Queued following files for decryption: {files}, proceed? ')
 if prompt.lower() != 'y':
 	sys.exit('Process cancelled by user, exiting ..')
 
