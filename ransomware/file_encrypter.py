@@ -11,7 +11,7 @@ files = []
 for file in os.listdir():
 	if file == sys.argv[0] or file.endswith('.key') or file.endswith('.py'):
 		continue
-	if os.path.isfile(file):	
+	if os.path.isfile(file):
 		files.append(file)
 
 prompt = input(f'Queued following files for encryption: {files}, proceed? ')
