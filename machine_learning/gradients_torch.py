@@ -45,4 +45,4 @@ for epoch in range(n_iters):
 
 print(f'Prediction after training: f(5) = {forward(5):.3f}')
 
-### now replace manual weight updater with PyTorch optimizer
+### now replace prediction/loss function/manual weight updater with PyTorch model/loss/optimizer

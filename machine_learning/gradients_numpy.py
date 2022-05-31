@@ -17,7 +17,7 @@ def forward(x):
 def loss(y, y_pred):
     return ((y - y_pred)**2).mean()
 
-# gradient a.k.a. derivative of loss function
+# gradient a.k.a. derivative of loss (objective) function
 # MSE = 1/N 2x (w*x - y)**2
 # dJ/dw = 1/N 2x (w*x - y)
 def gradient(x, y, y_pred):
