@@ -8,4 +8,4 @@ Contains tutorial material from youtube.com/freeCodeCamp.org for machine learnin
 Contains auxiliary scripts in Python/Bash from 'Comparative Performance Tests of commonly-used Monte Carlo Dose Calculation Algorithms'.
 
 ## Ransomware
-Contains experimental Scripts for key-driven file encryption/decryption.
+Contains experimental scripts for key-driven file encryption/decryption.
