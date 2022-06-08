@@ -19,7 +19,6 @@ def three_point_diff(x, y):
 
 
 dy = three_point_diff(x, y)
-print(len(y), len(dy))
 
 plt.plot(x, y, label='sin(x)')
 plt.plot(x[1:-1], dy, '.', label='dy/dx')
