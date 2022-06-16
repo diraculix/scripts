@@ -24,7 +24,7 @@ print(f'Prediction before training: f(5) = {model(torch.tensor([5], dtype=torch.
 
 # training
 learning_rate = 0.01
-n_iters = 2000
+n_iters = 2500
 
 loss = nn.MSELoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
@@ -49,4 +49,4 @@ for epoch in range(n_iters):
         [w, b] = model.parameters()
         print(f'epoch {epoch + 1}: weight = {w[0][0].item():.8f}, loss = {l:.8f}')
 
-print(f'Prediction before training: f(5) = {model(torch.tensor([5], dtype=torch.float32)).item():.3f}')
+print(f'Prediction after training: f(5) = {model(torch.tensor([5], dtype=torch.float32)).item():.3f}')
