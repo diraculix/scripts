@@ -13,7 +13,7 @@ X, y = bc.data, bc.target
 
 n_samples, n_features = X.shape
 
-# split and transform data (set mean and offset to '0')
+# split and transform data (set mean and offset to '0' and define uniform variance)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1234)  # split 20% from total data as training data
 sc = StandardScaler()
 X_train = sc.fit_transform(X_train)
