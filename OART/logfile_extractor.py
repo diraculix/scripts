@@ -23,6 +23,7 @@ class MachineLog:
                 elif index == len(os.listdir(self.logfile_dir)) - 1:
                     valid_dir = True
         
+        self.df_destination = r'N:\fs4-HPRT\HPRT-Docs\Lukas\Logfile_Extraction\dataframes'
         self.patient_record_df, self.patient_tuning_df = pd.DataFrame(), pd.DataFrame()
         self.fraction_list = os.listdir(self.logfile_dir)
         self.num_fractions = len(self.fraction_list)
@@ -48,7 +49,7 @@ class MachineLog:
         
         record_df_exists = False
         tuning_df_exists = False
-        for dirpath, dirnames, filenames in os.walk(os.path.join(self.logfile_dir, '..')):
+        for dirpath, dirnames, filenames in os.walk(os.path.join(self.df_destination, '..')):
             for fname in filenames:
                 if fname.__contains__(f'{self.patient_id}_records') and fname.endswith('.csv'):
                     self.record_df_name = fname
@@ -194,9 +195,8 @@ class MachineLog:
 
             print(f'  ..Fraction {str(fraction_no + 1).zfill(2)}/{str(self.num_fractions).zfill(2)} complete..') 
 
-        df_destination = r'N:\fs4-HPRT\HPRT-Docs\Lukas\Logfile_Extraction\dataframes'
-        os.chdir(df_destination)
-        print(f'''  ..Writing dataframe to '{df_destination}' as .CSV.. ''')
+        os.chdir(self.df_destination)
+        print(f'''  ..Writing dataframe to '{self.df_destination}' as .CSV.. ''')
         self.patient_record_df.to_csv(f'patient_{self.patient_id}_records_data.csv')
         self.patient_tuning_df.to_csv(f'patient_{self.patient_id}_tunings_data.csv')
         print('Complete')
@@ -204,7 +204,8 @@ class MachineLog:
     def plot_beam_layers(self):
         beam_list = self.patient_record_df['BEAM_ID'].drop_duplicates()
         indices = beam_list.index.to_list()
-        print('Key\tBeam-ID\t\tIn Fraction\tLayers\n')
+
+        print('Key\tBeam-ID\t\tFrom Fraction\tLayers\n')
         for choice, (index, beam) in enumerate(zip(indices, beam_list)):
             num_layers = int(self.patient_record_df['TOTAL_LAYERS'][index].mean())
             fraction = int(self.patient_record_df['FRACTION_ID'][index].mean())
@@ -213,20 +214,61 @@ class MachineLog:
         while True:
             try:
                 key = int(input('\n Select beam key: '))
-                if key > len(beam_list):
+                if key > len(beam_list) or key <= 0:
                     print('Key out of bounds, select another..')
                     continue
                 else:
                     break
             except:
-                pass
+                print('Invalid input, try again..')
 
-        print('Selected beam is:', beam_list[key - 1])
+        beam_id = str(beam_list[key - 1])
+        del beam_list, indices
+        scope_record_df = self.patient_record_df.loc[self.patient_record_df['BEAM_ID'] == beam_id]
+        scope_tuning_df = self.patient_tuning_df.loc[self.patient_tuning_df['BEAM_ID'] == beam_id]
+        print('Selected beam is:', beam_id)
 
-        # for beam in beam_list:
-        #     print(beam_list.index[beam_list['BEAM_ID'] == beam])
+        print('Generating plot..')
+        fig, axs = plt.subplots(7, 7, sharex=True, sharey=True, figsize=(24, 24), dpi=100)
+        ax0 = fig.add_subplot(111, frameon=False)
+        fig.subplots_adjust(hspace=0.0, wspace=0.0)
+        axs = axs.ravel()
+        for layer_id in scope_record_df['LAYER_ID'].drop_duplicates():
+            x_positions, y_positions = [], []
+            x_tunings , y_tunings = [], []
+            for spot_id in scope_record_df.loc[scope_record_df['LAYER_ID'] == layer_id]['SPOT_ID'].drop_duplicates():
+                x_positions.append(scope_record_df.loc[(scope_record_df['LAYER_ID'] == layer_id) & (scope_record_df['SPOT_ID'] == spot_id)]['X_POSITION(mm)'].mean())
+                y_positions.append(scope_record_df.loc[(scope_record_df['LAYER_ID'] == layer_id) & (scope_record_df['SPOT_ID'] == spot_id)]['Y_POSITION(mm)'].mean())
+            for tuning_id in scope_tuning_df.loc[scope_tuning_df['LAYER_ID'] == layer_id]['SPOT_ID'].drop_duplicates():   
+                x_tunings.append(scope_tuning_df.loc[(scope_tuning_df['LAYER_ID'] == layer_id) & (scope_tuning_df['SPOT_ID'] == tuning_id)]['X_POSITION(mm)'].mean())
+                y_tunings.append(scope_tuning_df.loc[(scope_tuning_df['LAYER_ID'] == layer_id) & (scope_tuning_df['SPOT_ID'] == tuning_id)]['Y_POSITION(mm)'].mean())
             
-        # scope_recorf_df = self.patient_record_df.loc[self.patient_record_df['BEAM_ID' == beam_id]]
+            axs[layer_id].plot(
+                x_positions,
+                y_positions,
+                label=f'Spot positions',
+                marker='o',
+                markeredgecolor='black',
+                markerfacecolor='None',
+                markersize=1.5,
+                markeredgewidth=0.2,
+                color='tab:blue',
+                linewidth=0.2
+            )
+            axs[layer_id].scatter(x_tunings, y_tunings, s=1.5, color='limegreen', label='Tuning positions')
+            axs[layer_id].annotate(f'Layer #{str(layer_id + 1).zfill(2)}', xy=(1.0, 1.0), xycoords='axes points', fontsize=8)
+            axs[layer_id].legend(loc='upper right')
+        plt.suptitle(f'Spot Positions for Beam-ID: {beam_id}', fontweight='bold', y=0.9)
+        ax0.set_xlabel('X', fontweight='bold', labelpad=10)
+        ax0.set_ylabel('Y', fontweight='bold', labelpad=10)
+        plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+        output_dir = r'N:\fs4-HPRT\HPRT-Docs\Lukas\Logfile_Extraction\output'
+        if not os.path.isdir(output_dir):
+            os.mkdir(output_dir)
+        try:
+            plt.savefig(f'{output_dir}/{self.patient_id}_{beam_id}_spots.pdf')
+        except PermissionError:
+            print(f'  Permission denied, no plot generated')
 
         
 class Beam(MachineLog):
@@ -395,9 +437,9 @@ class Beam(MachineLog):
 
 if __name__ == '__main__':
     log = MachineLog()
-    log.prepare_dataframe()
+    # log.prepare_dataframe()
     # log.summarize_beams()
-    # log.plot_beam_layers()
+    log.plot_beam_layers()
     sys.exit()
 
     out_dir = r'N:\fs4-HPRT\HPRT-Docs\Lukas\Logfile_Extraction\output'
@@ -447,7 +489,3 @@ if __name__ == '__main__':
     plt.savefig(out_dir + f'/{log.patient_id}_beam_{beam_id}_layer_{layer_id}_spot_{spot_id}_hist.pdf')
     plt.show()
     plt.clf()
-
-
-    
-    
