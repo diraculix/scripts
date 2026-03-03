@@ -160,35 +160,88 @@ def read_in_ct_data(path_ct_dicom_series):
     for pathCTDicom in Path(path_ct_dicom_series).iterdir():
         if pathCTDicom.suffix == '.dcm':
             dsCTs.append(dicom.dcmread(pathCTDicom))
-    ctSpacing = [float(each) for each in dsCTs[0].PixelSpacing] + [float(dsCTs[0].SliceThickness)]
-    dsCTs.sort(key=lambda x: x.InstanceNumber)
+    
+    # 1. Sort slices by Instance Number
+    dsCTs.sort(key=lambda x: float(x.ImagePositionPatient[2]))
+    
+    # 2. Calculate Spacing (MUST BE POSITIVE)
+    pixel_spacing_x = float(dsCTs[0].PixelSpacing[1]) # Swap X/Y for SimpleITK
+    pixel_spacing_y = float(dsCTs[0].PixelSpacing[0])
+    
+    # Calculate Z vector between first two slices
+    origin0 = np.array([float(x) for x in dsCTs[0].ImagePositionPatient])
+    
+    if len(dsCTs) > 1:
+        origin1 = np.array([float(x) for x in dsCTs[1].ImagePositionPatient])
+        z_vector = origin1 - origin0
+        z_spacing = np.linalg.norm(z_vector)
+        
+        # Compute the normalized Z direction vector
+        z_direction_norm = z_vector / z_spacing
+    else:
+        # Fallback for single slice
+        z_spacing = float(dsCTs[0].SliceThickness)
+        # Assume standard Z direction if cannot be calculated
+        z_direction_norm = np.array([0.0, 0.0, 1.0])
+
+    ctSpacing = [pixel_spacing_x, pixel_spacing_y, z_spacing]
+
+    # 3. Construct Direction Matrix
+    # DICOM ImageOrientationPatient gives the X and Y direction vectors of the slice
+    orient = [float(x) for x in dsCTs[0].ImageOrientationPatient]
+    dir_x = np.array(orient[:3])
+    dir_y = np.array(orient[3:])
+    dir_z = z_direction_norm
+    
+    # Flatten into the 9-element tuple SimpleITK expects (X, Y, Z components)
+    ctDirection = (
+        dir_x[0], dir_x[1], dir_x[2],
+        dir_y[0], dir_y[1], dir_y[2],
+        dir_z[0], dir_z[1], dir_z[2]
+    )
+
     ctImagePositionPatientMin = [float(each) for each in dsCTs[0].ImagePositionPatient]
     ctImagePositionPatientMax = [float(each) for each in dsCTs[-1].ImagePositionPatient]
+    
     ctArray = []     
     for dsCT in dsCTs:
         ctArray.append(dsCT.pixel_array * dsCT.RescaleSlope + dsCT.RescaleIntercept)
     ctArray = np.array(ctArray)
-    return ctArray, ctSpacing, ctImagePositionPatientMin, ctImagePositionPatientMax
+    
+    return ctArray, ctSpacing, ctImagePositionPatientMin, ctImagePositionPatientMax, ctDirection
 
 def resize_dicom_dose_image(ctArray_shape, doseArray, doseSpacing, ctSpacing, 
-                            doseImagePositionPatient, ctImagePositionPatientMin, ctImagePositionPatientMax):
+                            doseImagePositionPatient, ctImagePositionPatientMin, 
+                            doseDirection, ctDirection):
     """ Resamples a dose/LET grid to match the CT geometry using SimpleITK. """
+    
+    # 1. Setup SOURCE (Dose) Image
     doseImage = sitk.GetImageFromArray(doseArray)
+    doseImage.SetOrigin(doseImagePositionPatient)
     doseImage.SetSpacing(doseSpacing)
+    doseImage.SetDirection(doseDirection) # Apply correct rotation/orientation
+    
+    # 2. Setup TARGET (CT) Resampler
     resampler = sitk.ResampleImageFilter()
+    resampler.SetOutputOrigin(ctImagePositionPatientMin)
     resampler.SetOutputSpacing(ctSpacing)
+    resampler.SetOutputDirection(ctDirection) # Ensure output matches CT rotation
     resampler.SetSize(ctArray_shape) 
+    
+    # 3. Execute
+    # Default is Linear Interpolation, which is appropriate for Dose.
     resampled_image = resampler.Execute(doseImage)
+    
+    # 4. Extract
     doseArrayResampled = sitk.GetArrayFromImage(resampled_image)
-    dx, dy, dz = ((np.array(doseImagePositionPatient) - np.array(ctImagePositionPatientMin)) / np.array(ctSpacing)).astype(int)
-    doseArrayResampled = shift(doseArrayResampled, (dz, dy, dx))
+    
     return doseArrayResampled
 
 def organ_extraction_worker(args):
     """ Worker function for multiprocessing extraction. """
     (index, indices, beamlet_name, start_time, duration, 
      base_folder, subfolder_name, file_prefix, 
-     ct_shape, ct_spacing, ct_origin_min, ct_origin_max, mode) = args
+     ct_shape, ct_spacing, ct_origin_min, ct_direction, mode) = args
 
     filename = f"{file_prefix}{beamlet_name}.dcm"
     file_path = os.path.join(base_folder, subfolder_name, filename)
@@ -197,11 +250,31 @@ def organ_extraction_worker(args):
 
     ds = dicom.dcmread(file_path)
     dataArray = ds.pixel_array * ds.DoseGridScaling
-    dataSpacing = [float(x) for x in ds.PixelSpacing] + [float(ds.SliceThickness)]
+    
+    
+    # Swap X/Y spacing for SimpleITK
+    dataSpacing = [float(ds.PixelSpacing[1]), float(ds.PixelSpacing[0]), float(ds.SliceThickness)]
     dataOrigin = [float(x) for x in ds.ImagePositionPatient]
     
+    # Construct Dose Direction Matrix (Source)
+    # Dose grids from TPS usually have ImageOrientationPatient.
+    if "ImageOrientationPatient" in ds:
+        dDir = [float(x) for x in ds.ImageOrientationPatient]
+        rx, ry, rz = dDir[0], dDir[1], dDir[2]
+        cx, cy, cz = dDir[3], dDir[4], dDir[5]
+        # Cross product for Z
+        zx = ry * cz - rz * cy
+        zy = rz * cx - rx * cz
+        zz = rx * cy - ry * cx
+        dataDirection = (rx, ry, rz, cx, cy, cz, zx, zy, zz)
+    else:
+        # Fallback to Identity if missing (Unlikely for valid DICOM)
+        dataDirection = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    # ----------------------------------------------
+    
     resampled = resize_dicom_dose_image(ct_shape, dataArray, dataSpacing, ct_spacing, 
-                                        dataOrigin, ct_origin_min, ct_origin_max)
+                                        dataOrigin, ct_origin_min, dataDirection, ct_direction)
+                                        
     # Advanced indexing works with numpy arrays (which indices now is)
     extracted_values = resampled[indices[0], indices[1], indices[2]]
 
@@ -257,7 +330,7 @@ def calculate_feature_organ_export(mode, spots_folder, output_folder, spot_timel
     """
     print(f"\n--- Feature: Exporting Organ {mode} CSVs ---")
     ct_data = read_in_ct_data(ct_path) 
-    ct_array, ct_spacing, ct_min, ct_max = ct_data
+    ct_array, ct_spacing, ct_min, ct_max, ct_direction = ct_data
     ct_shape = ct_array.shape[::-1]
     
     print(f"Loading Structure Set: {os.path.basename(struct_path)}")
