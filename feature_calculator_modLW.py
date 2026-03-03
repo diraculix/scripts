@@ -20,7 +20,7 @@
 # ======================================================================================== #
 # Define the full path to the main treatment folder.
 # Script expects subfolders: "..._spots", "..._logs", "CT", "Structure_set" inside this path.
-PATH_TREATMENT = r"Q:\PHYSIK\PROTONEN\Studien_Forschungsprojekte\RION\Patienten_Datenanalyse\RION-UKD004\Feature-Calculation"
+PATH_TREATMENT = r"Q:\PHYSIK\PROTONEN\Studien_Forschungsprojekte\RION\Patienten_Datenanalyse\RION-UKD002\Feature-Calculation"
 
 # Memory Management:
 # True = Faster but requires more RAM (loads all dose grids at once).
