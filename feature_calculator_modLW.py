@@ -252,24 +252,18 @@ def organ_extraction_worker(args):
     dataArray = ds.pixel_array * ds.DoseGridScaling
     
     
-    # Swap X/Y spacing for SimpleITK
-    dataSpacing = [float(ds.PixelSpacing[1]), float(ds.PixelSpacing[0]), float(ds.SliceThickness)]
+    # Correct spacing for SimpleITK
+    dataSpacing = [float(ds.PixelSpacing[0]), float(ds.PixelSpacing[1]), float(ds.SliceThickness)]
     dataOrigin = [float(x) for x in ds.ImagePositionPatient]
     
     # Construct Dose Direction Matrix (Source)
     # Dose grids from TPS usually have ImageOrientationPatient.
     if "ImageOrientationPatient" in ds:
         dDir = [float(x) for x in ds.ImageOrientationPatient]
-        rx, ry, rz = dDir[0], dDir[1], dDir[2]
-        cx, cy, cz = dDir[3], dDir[4], dDir[5]
-        # Cross product for Z
-        zx = ry * cz - rz * cy
-        zy = rz * cx - rx * cz
-        zz = rx * cy - ry * cx
-        dataDirection = (rx, ry, rz, cx, cy, cz, zx, zy, zz)
+        dataDirection = tuple(dDir)  # Use original 6 elements, let SimpleITK handle if needed
     else:
         # Fallback to Identity if missing (Unlikely for valid DICOM)
-        dataDirection = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        dataDirection = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
     # ----------------------------------------------
     
     resampled = resize_dicom_dose_image(ct_shape, dataArray, dataSpacing, ct_spacing, 
